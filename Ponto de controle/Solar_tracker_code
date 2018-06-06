@@ -1,0 +1,85 @@
+#include <Servo.h>
+// 180 maximo horizontal
+Servo horizontal; // servo horizontal
+int servoh = 180; // 90; // padrao servo horizontal
+int servohLimitHigh = 180;
+int servohLimitLow = 65;
+// limites do servo horizontal
+Servo vertical; // servo vertical;
+int servov = 45; // 90; // padrao servo vertical
+int servovLimitHigh = 80;
+int servovLimitLow = 15;
+//limites servo horizontal
+// LDR pin connections
+// name = analogpin;
+int ldrlt = P1_0; //LDR top left - sensor superior esquerdo 
+int ldrrt =  P1_1; //LDR top rigt - sensor superior direito
+int ldrld =  P1_2; //LDR down left - sensor inferior esquerdo
+int ldrrd =  P1_3; //ldr down rigt - sensor inferior direito
+void setup()
+{ Serial.begin(9600);
+// pinos dos servos no arduino
+horizontal.attach( P2_3);
+vertical.attach( P1_6);
+//posicao padrao dos motores
+horizontal.write(180);
+vertical.write(45);
+delay(3000);
+}
+void loop()
+{ int lt = analogRead(ldrlt);
+int rt = analogRead(ldrrt); 
+int ld = analogRead(ldrld);
+int rd = analogRead(ldrrd);
+// tolerancia dos motores
+int dtime = 10; int tol = 50;
+int avt = (lt + rt) / 2; // average value top - valor entre os superiores
+int avd = (ld + rd) / 2; // average value down - valor entre os inferiores
+int avl = (lt + ld) / 2; // average value left - valor entre os sensores da parte esquerda
+int avr = (rt + rd) / 2; // average value right - valor entre os sensores da parte direita
+int dvert = avt - avd; // diferenca entre os sensores superiores e inferiores (motor vertical)
+int dhoriz = avl - avr;// diferenca entre os sensores da parte direita e esquerda (motor horizontal)
+//checar se a diferenca esta dentro da tolerancia, se nao estiver, mudar o angulo vertical (comentario)
+if (-1*tol > dvert || dvert > tol) 
+{
+if (avt > avd) // se houver mais luz na parte superior, girar placa verticalmente mais para a parte superior, so ate seu limite
+{
+servov = ++servov;
+if (servov > servovLimitHigh)
+{
+servov = servovLimitHigh;
+}
+}
+// Se nao, girar verticalmente para a parte inferior, ate seu limite.
+else if (avt < avd)
+{
+servov= --servov;
+if (servov < servovLimitLow)
+{
+servov = servovLimitLow;
+}
+}
+vertical.write(servov);
+}
+if (-1*tol > dhoriz || dhoriz > tol) // check if the diffirence is in the tolerance else change horizontal angle
+{
+if (avl > avr)
+{
+servoh = --servoh;
+if (servoh < servohLimitLow)
+{
+servoh = servohLimitLow;
+}
+}
+else if (avl < avr)
+{
+servoh = ++servoh;
+if (servoh > servohLimitHigh)
+{
+servoh = servohLimitHigh;
+}
+}
+horizontal.write(servoh);
+}
+delay(dtime);
+}
