@@ -1,85 +1,120 @@
-#include <Servo.h>
-// 180 maximo horizontal
-Servo horizontal; // servo horizontal
-int servoh = 180; // 90; // padrao servo horizontal
-int servohLimitHigh = 180;
-int servohLimitLow = 65;
-// limites do servo horizontal
-Servo vertical; // servo vertical;
-int servov = 45; // 90; // padrao servo vertical
-int servovLimitHigh = 80;
-int servovLimitLow = 15;
-//limites servo horizontal
-// LDR pin connections
-// name = analogpin;
-int ldrlt = P1_0; //LDR top left - sensor superior esquerdo 
-int ldrrt =  P1_1; //LDR top rigt - sensor superior direito
-int ldrld =  P1_2; //LDR down left - sensor inferior esquerdo
-int ldrrd =  P1_3; //ldr down rigt - sensor inferior direito
-void setup()
-{ Serial.begin(9600);
-// pinos dos servos no arduino
-horizontal.attach( P2_3);
-vertical.attach( P1_6);
-//posicao padrao dos motores
-horizontal.write(180);
-vertical.write(45);
-delay(3000);
+#include "msp430.h"
+#define ADC_CH 4
+unsigned int samples[ADC_CH];
+
+#define SENS_LEFT BIT0
+#define SENS_RIGHT BIT1
+#define SENS_UP BIT2
+#define SENS_DOWN BIT3
+
+#define MCU_CLOCK			1000000
+#define PWM_FREQUENCY		46		//ideally 50Hz.
+#define SERVO_STEPS			30		// max amount of steps in degrees (180 is common)
+
+
+unsigned int PWM_Period		= (MCU_CLOCK / PWM_FREQUENCY);	// PWM Period
+unsigned int PWM_Duty		= 0;							// %
+int i ;
+int count  ;
+int count2  ;
+
+void ConfigureAdc(void){
+
+ADC10CTL1 = INCH_3 | ADC10DIV_0 | CONSEQ_3 | SHS_0;
+
+ADC10CTL0 = SREF_0 | ADC10SHT_2 | MSC | ADC10ON | ADC10IE;
+
+ADC10AE0 =SENS_LEFT + SENS_RIGHT + SENS_UP + SENS_DOWN ;
+
+ADC10DTC1 = ADC_CH;
+
 }
-void loop()
-{ int lt = analogRead(ldrlt);
-int rt = analogRead(ldrrt); 
-int ld = analogRead(ldrld);
-int rd = analogRead(ldrrd);
-// tolerancia dos motores
-int dtime = 10; int tol = 50;
-int avt = (lt + rt) / 2; // average value top - valor entre os superiores
-int avd = (ld + rd) / 2; // average value down - valor entre os inferiores
-int avl = (lt + ld) / 2; // average value left - valor entre os sensores da parte esquerda
-int avr = (rt + rd) / 2; // average value right - valor entre os sensores da parte direita
-int dvert = avt - avd; // diferenca entre os sensores superiores e inferiores (motor vertical)
-int dhoriz = avl - avr;// diferenca entre os sensores da parte direita e esquerda (motor horizontal)
-//checar se a diferenca esta dentro da tolerancia, se nao estiver, mudar o angulo vertical (comentario)
-if (-1*tol > dvert || dvert > tol) 
-{
-if (avt > avd) // se houver mais luz na parte superior, girar placa verticalmente mais para a parte superior, so ate seu limite
-{
-servov = ++servov;
-if (servov > servovLimitHigh)
-{
-servov = servovLimitHigh;
+
+void main(void) {
+
+WDTCTL = WDTPW | WDTHOLD;
+
+		TA1CCTL1    = OUTMOD_7 ;
+		TA0CCTL1	= OUTMOD_7  ;
+
+		TA1CTL  = TASSEL_2 + MC_1 ;
+		TA0CTL  = TASSEL_2 + MC_1 ;
+
+		TA1CCR0	= PWM_Period-1;        // PWM Period
+		TA0CCR0 = PWM_Period-1 ;
+
+		TA1CCR1	= 0 ;            // TACCR1 PWM Duty Cycle
+		TA0CCR1 = 0 ;
+
+P1DIR = 0; /* set as inputs */
+P1SEL = 0; /* set as digital I/Os */
+P1OUT = 0; /* set resistors as pull-downs */
+
+P1REN |= (SENS_LEFT|SENS_RIGHT|SENS_DOWN|SENS_UP); /* enable pull-up on SENSOR */
+
+		P1DIR	|= BIT6  ;               // P1.2 = output
+		P2DIR   |= BIT2 ;
+
+		P1SEL	|= BIT6  ;               // P1.2 = TA1 output
+		P2SEL   |= BIT2  ;
+
+ConfigureAdc();
+__enable_interrupt();
+while (1) {
+
+	__delay_cycles(1000);
+	ADC10CTL0 &= ~ENC;
+	while (ADC10CTL1 & BUSY);
+	ADC10SA = (unsigned int)samples;
+	ADC10CTL0 |= ENC + ADC10SC;
+
+	__bis_SR_register(CPUOFF + GIE);
+
+	for (i = 0; i < SERVO_STEPS; i++) {
+		TA1CCR1 = count2 ;
+		TA0CCR1 = count ;
+		__delay_cycles(20000);
+		TA1CCR1 = count2 ;
+		TA0CCR1 = count ;
+		 __delay_cycles(20000);
+		}
+	}
 }
-}
-// Se nao, girar verticalmente para a parte inferior, ate seu limite.
-else if (avt < avd)
-{
-servov= --servov;
-if (servov < servovLimitLow)
-{
-servov = servovLimitLow;
-}
-}
-vertical.write(servov);
-}
-if (-1*tol > dhoriz || dhoriz > tol) // check if the diffirence is in the tolerance else change horizontal angle
-{
-if (avl > avr)
-{
-servoh = --servoh;
-if (servoh < servohLimitLow)
-{
-servoh = servohLimitLow;
-}
-}
-else if (avl < avr)
-{
-servoh = ++servoh;
-if (servoh > servohLimitHigh)
-{
-servoh = servohLimitHigh;
-}
-}
-horizontal.write(servoh);
-}
-delay(dtime);
-}
+
+#pragma vector = ADC10_VECTOR
+__interrupt void ADC10_ISR (void){
+
+
+
+if (samples[0] < samples[1]){
+	if(samples[1]> 550){
+		count = 850;
+		}else {
+			count = 1350;
+			}} else if ((samples[0] + samples[1])/2 < 500) {
+				count = 1350;
+				 } else {
+	if(samples[0]>550){
+		count = 1850;
+		}else {
+			count = 1350;
+			}}
+if (samples[2] < samples[3]) {
+	if(samples[3]> 550){
+		count2 =850;
+		}else {
+			count2 = 1150;
+			}
+			} else if ((samples[2] + samples[3])/2 < 500) {
+				count2 = 1150;
+				} else {
+	if(samples[2]>550){
+		count2 = 1850;
+		}else {
+		count2 = 1150;
+		}
+		}
+
+__bic_SR_register_on_exit(CPUOFF);
+	}
+
